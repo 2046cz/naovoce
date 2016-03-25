@@ -27,6 +27,36 @@ class JsonStorage
 @Naovoce.storage = new JsonStorage('naovoce')
 
 
+prepareDB = ->
+	database = $.Deferred()
+
+	# Create database and indexed storage for markers.
+	# This should be much more performant than localStorage.
+	indexedDB = window.indexedDB ||
+				window.mozIndexedDB ||
+				window.webkitIndexedDB ||
+				window.msIndexedDB
+
+	if indexedDB
+		request = indexedDB.open('naovoce', 1)
+
+		request.onsuccess = (event) ->
+			db = event.target.result
+			database.resolve(db)
+
+		request.onupgradeneeded = (event) ->
+			db = event.target.result
+			db.createObjectStore 'markers', {keyPath: 'id'}
+			database.resolve(db)
+	else
+		database.reject('IndexedDB is not supported by this browser.')
+
+	return database.promise()
+
+
+@Naovoce.db = prepareDB()
+
+
 # Enhance strings with truncete method.
 String::truncate = (n) ->
 	@substr(0, n - 1).trim() + ((if @length > n then "&hellip;" else ""))
