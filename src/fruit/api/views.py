@@ -1,3 +1,4 @@
+from django.http.response import Http404
 from django.utils.translation import ugettext_lazy as _
 from django.core.cache import caches
 from django.core.exceptions import ValidationError
@@ -146,6 +147,11 @@ def fruit_list_diff(request, date, time):
     """
     Get difference since date and/or time specified.
     """
+    if not date:
+        # The date is not mandatory in url regex, because otherwise we woudln't be able to
+        # use URL template tag without knowing the date ahead (we get the date using JS).
+        raise Http404
+
     since = ' '.join([date, time or '00:00:00'])
     try:
         fruit = Fruit.objects\
