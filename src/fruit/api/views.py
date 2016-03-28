@@ -4,7 +4,7 @@ from django.core.cache import caches
 from django.core.exceptions import ValidationError
 from django.dispatch import receiver
 from django.db.models.signals import post_save, post_delete
-from django.db.models import Count
+from django.db.models import Count, F
 from rest_framework import generics, status
 from rest_framework.decorators import api_view
 from rest_framework.exceptions import PermissionDenied
@@ -149,28 +149,30 @@ def fruit_list_diff(request, date, time):
     """
     if not date:
         # The date is not mandatory in url regex, because otherwise we woudln't be able to
-        # use URL template tag without knowing the date ahead (we get the date using JS).
+        # use URL template tag without knowing the date ahead (we get the date string using JS).
         raise Http404
 
     since = ' '.join([date, time or '00:00:00'])
+    fruit = Fruit.objects.order_by('-created').select_related('kind')
+    context = {'request': request}
+    data = {}
+
     try:
-        fruit = Fruit.objects\
-            .filter(created__gte=since)\
-            .order_by('-created')\
-            .select_related('kind')
+        data['created'] = serializers.FruitSerializer(
+            fruit.filter(created__gte=since, deleted=False).iterator(),
+            context=context, many=True).data
+        data['deleted'] = serializers.DeletedFruitSerializer(
+            fruit.filter(created__gte=since, deleted=True).iterator(),
+            context=context, many=True).data
+        data['updated'] = serializers.FruitSerializer(
+            fruit.filter(modified__gte=since, deleted=False)
+                 .exclude(modified=F('created')).iterator(),
+            context=context, many=True).data
     except ValidationError as e:
+        # nonsensical date/time
         return Response(
             data=dict(detail=e),
             status=status.HTTP_400_BAD_REQUEST,
         )
 
-    def serialize(deleted):
-        qs = fruit.filter(deleted=deleted)
-        serializer = serializers.DeletedFruitSerializer if deleted else serializers.FruitSerializer
-
-        return serializer(qs.iterator(), context={'request': request}, many=True).data
-
-    return Response({
-        'created': serialize(deleted=False),
-        'deleted': serialize(deleted=True),
-    })
+    return Response(data)

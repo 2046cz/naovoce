@@ -75,11 +75,12 @@
 
 	map = new Naovoce.Map 'map-detail'
 
-	map.loadMarkers('{% url 'api:fruit-list' %}?user={{ user.id }}')
-		.setView Naovoce.CENTER_CS
-		.setZoom 7
-		.addLocate()
-		.addSearch()
+	$.getJSON "{% url 'api:fruit-list' %}?user={{ user.id }}", (items) =>
+		map.loadMarkers items
+			.setView Naovoce.CENTER_CS
+			.setZoom 7
+			.addLocate()
+			.addSearch()
 
 	</script>
 {% endblock %}

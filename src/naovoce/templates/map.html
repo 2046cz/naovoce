@@ -65,7 +65,7 @@
 	map = new Naovoce.Map 'map'
 	new L.Hash map
 
-	map.loadMarkers '{% url 'api:fruit-list' %}'
+	map.loadMarkers()
 		.loadState()
 		.on 'moveend', ->
 			@saveState()
@@ -74,7 +74,7 @@
 
 	filter.reload = (kind) ->
 		if not kind?
-			map.showMarkers()
+			map.displayMarkers()
 		else
 			map.filterMarkers(kind)
 

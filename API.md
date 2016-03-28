@@ -142,7 +142,8 @@ Na-ovoce.cz, public API
                     "time": "2016-03-07 12:16:00",
                     "url": "https://na-ovoce.cz/api/v1/fruit/32112/"
                 }
-            ]
+            ],
+            "modified": []
         }
 
 

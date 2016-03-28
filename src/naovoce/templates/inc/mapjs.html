@@ -67,7 +67,92 @@ class PopupMarker extends Naovoce.Marker
 			maxWidth: 200
 
 
+class MarkersDB
+	###
+	Browser's offline markers cache, built around Naovoce.db promise object (indexedDB)
+	###
+	constructor: ->
+		Naovoce.db.fail (msg) ->
+			console.log msg
+
+	fetchAll: (callback) ->
+		Naovoce.db.done (db) =>
+			trans = @transaction db
+			store = @objectStore trans
+			items = []
+
+			trans.oncomplete = (event) =>
+				timestamp = @getTimestamp() or @now()
+				callback items, timestamp
+			trans.onerror = ->
+				callback()
+
+			cursorRequest = store.openCursor()
+			cursorRequest.onsuccess = (event) ->
+				cursor = event.target.result
+				if cursor
+					items.push cursor.value
+					cursor.continue()
+			cursorRequest.onerror = ->
+				callback()
+
+		Naovoce.db.fail (msg) ->
+			callback()
+
+	clearAll: ->
+		Naovoce.db.done (db) =>
+			@setTimestamp @now()
+
+			@objectStore(@transaction db)
+				.clear()
+
+	resetAll: (data) ->
+		Naovoce.db.done (db) =>
+			@setTimestamp @now()
+
+			store = @objectStore(@transaction db)
+
+			store.clear()
+			for item in data
+				store.put item
+
+	update: (data) ->
+		Naovoce.db.done (db) =>
+			@setTimestamp @now()
+
+			store = @objectStore(@transaction db)
+
+			for item in data.deleted
+				store.delete item.id
+			for item in data.created
+				store.put item
+			for item in data.updated
+				store.put item
+
+	{# helper functions #}
+	transaction: (db) ->
+		db.transaction 'markers', 'readwrite'
+
+	objectStore: (trans) ->
+		trans.objectStore 'markers'
+
+	setTimestamp: (time) ->
+		Naovoce.storage.setObject 'markersUpdated', time
+
+	getTimestamp: ->
+		Naovoce.storage.getObject 'markersUpdated'
+
+	now: ->
+		d = new Date()
+		pad = (n) -> if n < 10 then '0'+n else n
+		"#{d.getFullYear()}-#{pad(d.getUTCMonth()+1)}-#{pad(d.getUTCDate())}/" +
+		"#{pad(d.getUTCHours())}:#{pad(d.getUTCMinutes())}:#{pad(d.getUTCSeconds())}/"
+
+
 class Naovoce.Map extends L.Map
+	###
+	Map class used across the project. Extends L.Map by
+	###
 	constructor: (id) ->
 		params =
 			maxZoom: 18,
@@ -93,6 +178,8 @@ class Naovoce.Map extends L.Map
 			@markerLayerGroup.addLayers = (layers) ->
 				@addLayer l for l in layers
 
+		@markersDB = new MarkersDB()
+
 		{# Add more content to popups when marker clicked. #}
 		@.on 'popupopen', (ev) ->
 			$.getJSON ev.popup._source.fruit.url, (json) =>
@@ -110,19 +197,35 @@ class Naovoce.Map extends L.Map
 						"#{address}</p>" + content if address
 			@
 
-		{# Add spinned DIV into map container. #}
+		{# Add spinner DIV into map container. #}
 		@spinner = $ '<div id="spinner">'
 		$("##{id}").prepend @spinner
 
-	loadMarkers: (url) ->
+	loadMarkers: (items) ->
 		@spinner.addClass 'spinning'
-		$.getJSON url, (json) =>
-			@markers = (new PopupMarker fruit for fruit in json)
-			@showMarkers()
+
+		if items?.length
+			@markers = (new PopupMarker fruit for fruit in items)
+			@displayMarkers()
 			@spinner.removeClass 'spinning'
+		else
+			{# No items? Try to load them from local DB. #}
+			@markersDB.fetchAll (items, lastFetched) =>
+				{# Did callback receive local data? #}
+				if items?.length
+					{# Fetch only diff since timestamp. #}
+					$.getJSON "{% url 'api:fruit-diff' %}#{lastFetched}", (diff) =>
+						@markersDB.update diff
+						@markersDB.fetchAll (items) =>
+							@loadMarkers items
+				else
+					{# Else fetch data remotely and try to save them locally. #}
+					$.getJSON "{% url 'api:fruit-list' %}", (items) =>
+						@loadMarkers items
+						@markersDB.resetAll items
 		@
 
-	showMarkers: ->
+	displayMarkers: ->
 		@markerLayerGroup.clearLayers()
 		@markerLayerGroup.addLayers @markers
 		@
